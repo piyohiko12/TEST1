@@ -8,6 +8,7 @@
 # 使い方: eval/run.sh <round> [prompt-file] [arms...]
 #   例:    eval/run.sh 1                 # PROMPT.md で全アーム実行
 #   例:    eval/run.sh 2 PROMPT.md style # styleアームのみ再実行
+#   SAMPLES=2 eval/run.sh 5 ...          # 質問ごとに複数サンプル採取(2つ目以降は qN-s2.md 等)
 set -u
 
 ROUND="${1:?usage: run.sh <round> [prompt-file] [arms...]}"
@@ -26,10 +27,13 @@ $(cat "$REPO/$PROMPT_FILE")"
 WORKDIR="$(mktemp -d)"
 MAXPAR=6
 
+SAMPLES="${SAMPLES:-1}"
+
 run_one() {
-  local arm="$1" model="$2" sys="$3" qfile="$4"
+  local arm="$1" model="$2" sys="$3" qfile="$4" sample="${5:-1}"
   local qname out
   qname="$(basename "$qfile" .txt)"
+  [ "$sample" -gt 1 ] && qname="$qname-s$sample"
   out="$OUT/$arm/$qname.md"
   [ -s "$out" ] && return 0   # 既存の非空結果はスキップ(再実行に安全)
   mkdir -p "$OUT/$arm"
@@ -53,9 +57,11 @@ for arm in "${ARMS[@]}"; do
     *) echo "unknown arm: $arm" >&2; exit 1 ;;
   esac
   for qfile in "$QDIR"/q*.txt; do
-    run_one "$arm" "$model" "$sys" "$qfile" &
-    pids=$((pids+1))
-    [ $((pids % MAXPAR)) -eq 0 ] && wait
+    for s in $(seq 1 "$SAMPLES"); do
+      run_one "$arm" "$model" "$sys" "$qfile" "$s" &
+      pids=$((pids+1))
+      [ $((pids % MAXPAR)) -eq 0 ] && wait
+    done
   done
 done
 wait
